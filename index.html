@@ -2166,6 +2166,17 @@ function dlCSV(type){
 })();
 
 // ────────────────────────────────────────────────
+// 第一点：变量声明（必须放在所有函数之前，最顶部！）
+// ────────────────────────────────────────────────
+// 这些变量现在是“全局变量”，网页里任何地方都能读取到它们
+
+let rules = {};          // 存储单价规则
+let dataBatches = [];    // 存储上传的数据包 (就是报错找不到的这个)
+let costs = {};          // 存储成本数据
+let teams = {};          // 存储团队名单
+let accounts = [];       // 存储账号数据
+let currentUser = null;  // 存储当前登录用户
+// ────────────────────────────────────────────────
 // SUPABASE 云端配置
 // ────────────────────────────────────────────────
 const SB_URL = "https://fgqpxbxdvwktmnqmqmfn.supabase.co";
@@ -2177,10 +2188,51 @@ async function saveToCloud() {
     const btn = document.getElementById('syncBtn');
     const statusText = document.getElementById('syncStatus');
     
-    if (dataBatches.length === 0 && Object.keys(rules).length === 0) {
-        toast("没有数据可供保存", "err");
+    // 关键修复：确保在访问前数据已存在，如果未定义则初始化为空数组
+    const currentData = typeof dataBatches !== 'undefined' ? dataBatches : [];
+
+    if (currentData.length === 0) {
+        alert("当前没有可同步的数据，请先上传并处理 CSV 文件。");
         return;
     }
+
+    try {
+        btn.disabled = true;
+        if(statusText) statusText.innerText = "正在同步...";
+
+        const payload = {
+            data: {
+                rules: typeof rules !== 'undefined' ? rules : {},
+                dataBatches: currentData,
+                costs: typeof costs !== 'undefined' ? costs : {},
+                teams: typeof teams !== 'undefined' ? teams : {},
+                accounts: typeof accounts !== 'undefined' ? accounts : []
+            },
+            owner_name: (window.currentUser && currentUser.un) ? currentUser.un : 'Admin'
+        };
+
+        // 注意：这里使用 supabaseClient，避免与插件名称冲突
+        const { data, error } = await supabaseClient
+            .from('projects')
+            .insert([payload])
+            .select();
+
+        if (error) throw error;
+
+        const shareId = data[0].id;
+        const shareUrl = window.location.origin + window.location.pathname + '?pid=' + shareId;
+        
+        await navigator.clipboard.writeText(shareUrl);
+        alert(`✅ 同步成功！\n\n协作链接已复制到剪贴板：\n${shareUrl}`);
+
+    } catch (err) {
+        console.error("同步失败详情:", err);
+        alert("同步失败: " + err.message);
+    } finally {
+        btn.disabled = false;
+        if(statusText) statusText.innerText = "☁️ 更新云端数据";
+    }
+}
 
     try {
         btn.style.opacity = "0.6";
